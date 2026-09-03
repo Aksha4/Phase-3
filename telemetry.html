@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Week 8 Telemetry Dashboard</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            color: #222;
+        }
+
+        header {
+            padding: 24px;
+            background: #ffffff;
+            border-bottom: 1px solid #ddd;
+        }
+
+        header h1 {
+            margin: 0 0 8px;
+        }
+
+        header p {
+            margin: 0;
+            color: #666;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: auto;
+            padding: 24px;
+        }
+
+        .metrics-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .metric-card {
+            flex: 1 1 220px;
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .metric-card h3 {
+            margin-top: 0;
+            font-size: 15px;
+            color: #666;
+        }
+
+        .metric-value {
+            font-size: 30px;
+            font-weight: bold;
+        }
+
+        .charts-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .chart-card {
+            flex: 1 1 500px;
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            min-width: 0;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 320px;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 12px;
+            background: #ffffff;
+            border-radius: 8px;
+        }
+
+        @media (max-width: 700px) {
+            .container {
+                padding: 12px;
+            }
+
+            .chart-card {
+                flex-basis: 100%;
+            }
+
+            .metric-card {
+                flex-basis: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>System Performance Dashboard</h1>
+    <p>Real-Time Telemetry &amp; Stress Monitoring</p>
+</header>
+
+<div class="container">
+
+    <div class="metrics-grid">
+
+        <div class="metric-card">
+            <h3>Worker Events</h3>
+            <div id="workerEvents" class="metric-value">0</div>
+        </div>
+
+        <div class="metric-card">
+            <h3>Peak Stress Latency</h3>
+            <div id="peakLatency" class="metric-value">0 ms</div>
+        </div>
+
+        <div class="metric-card">
+            <h3>Memory Usage</h3>
+            <div id="memoryUsage" class="metric-value">0 MB</div>
+        </div>
+
+        <div class="metric-card">
+            <h3>Queue Size</h3>
+            <div id="queueSize" class="metric-value">0</div>
+        </div>
+
+    </div>
+
+    <div class="charts-grid">
+
+        <div class="chart-card">
+            <h2>Stress Test Latency</h2>
+
+            <div class="chart-container">
+                <canvas id="latencyChart"></canvas>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <h2>Worker Processing Time</h2>
+
+            <div class="chart-container">
+                <canvas id="processingChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="status">
+        <strong>Status:</strong>
+        <span id="statusText">Waiting for telemetry...</span>
+    </div>
+
+</div>
+
+<script>
+    const latencyData = {
+        labels: [],
+        datasets: [{
+            label: "Stress latency average (ms)",
+            data: [],
+            tension: 0.3
+        }]
+    };
+
+    const processingData = {
+        labels: [],
+        datasets: [{
+            label: "Worker processing average (seconds)",
+            data: [],
+            tension: 0.3
+        }]
+    };
+
+    const latencyChart = new Chart(
+        document.getElementById("latencyChart"),
+        {
+            type: "line",
+            data: latencyData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        }
+    );
+
+    const processingChart = new Chart(
+        document.getElementById("processingChart"),
+        {
+            type: "line",
+            data: processingData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        }
+    );
+
+
+    // Parse a normal Prometheus metric
+    function getMetric(text, metricName, labelFilter = "") {
+        const lines = text.split("\n");
+
+        const line = lines.find(line =>
+            line.startsWith(metricName) &&
+            !line.startsWith("#") &&
+            line.includes(labelFilter)
+        );
+
+        if (!line) {
+            return null;
+        }
+
+        const match = line.match(/(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*$/);
+
+        return match ? Number(match[1]) : null;
+    }
+
+
+    async function loadMetrics() {
+        try {
+            const response = await fetch("/metrics");
+
+            if (!response.ok) {
+                throw new Error("Metrics request failed");
+            }
+
+            const text = await response.text();
+
+
+            // Worker events
+            const workerEvents = getMetric(
+                text,
+                "worker_events_processed_total",
+                'event_type="stress_burst"'
+            );
+
+
+            // Peak latency
+            const peakLatency = getMetric(
+                text,
+                "stress_test_peak_latency_milliseconds",
+                'event_type="stress_burst"'
+            );
+
+
+            // Queue size
+            const queueSize = getMetric(
+                text,
+                "worker_queue_size"
+            );
+
+
+            // Memory
+            const memoryBytes = getMetric(
+                text,
+                "process_resident_memory_bytes"
+            );
+
+
+            // Worker processing histogram
+            const processingSum = getMetric(
+                text,
+                "worker_processing_duration_seconds_sum",
+                'event_type="stress_burst"'
+            );
+
+            const processingCount = getMetric(
+                text,
+                "worker_processing_duration_seconds_count",
+                'event_type="stress_burst"'
+            );
+
+
+            // Stress latency histogram
+            const latencySum = getMetric(
+                text,
+                "stress_test_latency_milliseconds_sum",
+                'event_type="stress_burst"'
+            );
+
+            const latencyCount = getMetric(
+                text,
+                "stress_test_latency_milliseconds_count",
+                'event_type="stress_burst"'
+            );
+
+
+            // Update cards
+            if (workerEvents !== null) {
+                document.getElementById("workerEvents").textContent =
+                    workerEvents;
+            }
+
+            if (peakLatency !== null) {
+                document.getElementById("peakLatency").textContent =
+                    peakLatency + " ms";
+            }
+
+            if (queueSize !== null) {
+                document.getElementById("queueSize").textContent =
+                    queueSize;
+            }
+
+            if (memoryBytes !== null) {
+                const memoryMB =
+                    memoryBytes / 1024 / 1024;
+
+                document.getElementById("memoryUsage").textContent =
+                    memoryMB.toFixed(2) + " MB";
+            }
+
+
+            // Calculate average stress latency
+            if (
+                latencySum !== null &&
+                latencyCount !== null &&
+                latencyCount > 0
+            ) {
+                const averageLatency =
+                    latencySum / latencyCount;
+
+                const now =
+                    new Date().toLocaleTimeString();
+
+                latencyData.labels.push(now);
+                latencyData.datasets[0].data.push(
+                    averageLatency
+                );
+
+                if (latencyData.labels.length > 20) {
+                    latencyData.labels.shift();
+                    latencyData.datasets[0].data.shift();
+                }
+            }
+
+
+            // Calculate average worker processing time
+            if (
+                processingSum !== null &&
+                processingCount !== null &&
+                processingCount > 0
+            ) {
+                const averageProcessing =
+                    processingSum / processingCount;
+
+                const now =
+                    new Date().toLocaleTimeString();
+
+                processingData.labels.push(now);
+                processingData.datasets[0].data.push(
+                    averageProcessing
+                );
+
+                if (processingData.labels.length > 20) {
+                    processingData.labels.shift();
+                    processingData.datasets[0].data.shift();
+                }
+            }
+
+
+            latencyChart.update();
+            processingChart.update();
+
+
+            document.getElementById("statusText").textContent =
+                "Telemetry connected — updated " +
+                new Date().toLocaleTimeString();
+
+        } catch (error) {
+
+            console.error(
+                "Telemetry error:",
+                error
+            );
+
+            document.getElementById("statusText").textContent =
+                "Telemetry unavailable";
+        }
+    }
+
+
+    // Initial load
+    loadMetrics();
+
+
+    // Refresh every 5 seconds
+    setInterval(
+        loadMetrics,
+        5000
+    );
+</script>
+</body>
+</html>
