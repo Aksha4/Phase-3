@@ -425,3 +425,282 @@ Conclusion
 Week 10 successfully integrated telemetry processing, real-time speed-index calculation, Prometheus monitoring, a responsive dashboard, API rate limiting, browser cache controls, and local HTTPS into the backend project.
 
 The verified five-event stress test produced matching telemetry and Prometheus results, providing evidence that the telemetry pipeline and monitoring layer are functioning correctly
+
+
+---
+
+# Week 11 Assessment — Graduation Profile Setup
+
+## Week 11 Objective
+
+Prepare the Phase-2 backend for a production-style sandbox using Docker containerization, CI/CD automation, service networking, and secure runtime configuration.
+
+## Week 11 Work Completed
+
+### 1. Multi-Stage Dockerization
+
+A multi-stage `Dockerfile` was created using `node:24-alpine`.
+
+**Dependencies stage:**
+
+```dockerfile
+FROM node:24-alpine AS dependencies
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm ci --omit=dev
+```
+
+**Production stage:**
+
+```dockerfile
+FROM node:24-alpine AS production
+
+WORKDIR /app
+
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY package*.json ./
+COPY app.js ./
+COPY src ./src
+COPY public ./public
+COPY docs ./docs
+
+EXPOSE 3000
+
+CMD ["node", "app.js"]
+```
+
+The multi-stage approach separates dependency installation from the production runtime image.
+
+### 2. Docker Image Verification
+
+Docker version used:
+
+```text
+Docker 29.4.3
+```
+
+The image was successfully built:
+
+```text
+phase2-week11:latest
+```
+
+Reported Docker content size:
+
+```text
+68.2 MB
+```
+
+### 3. Docker Container Deployment
+
+The production container was created as:
+
+```text
+phase2-week11-container
+```
+
+Port mapping:
+
+```text
+0.0.0.0:3000 -> 3000/tcp
+```
+
+The application was verified at:
+
+```text
+https://localhost:3000
+```
+
+The metrics endpoint was verified at:
+
+```text
+https://localhost:3000/metrics
+```
+
+### 4. HTTPS Runtime Certificates
+
+Local HTTPS certificates:
+
+```text
+certs/localhost-cert.pem
+certs/localhost-key.pem
+```
+
+The private key is not copied into the Docker image. The certificates are mounted into the container at runtime.
+
+Example:
+
+```powershell
+docker run -d --name phase2-week11-container -p 3000:3000 -v "${PWD}\certs:/app/certs:ro" phase2-week11
+```
+
+The `certs/` directory is excluded from Git.
+
+### 5. Redis Docker Networking
+
+Redis container:
+
+```text
+week7-redis
+```
+
+Dedicated Docker network:
+
+```text
+phase2-network
+```
+
+Both the application container and Redis container were connected to this network.
+
+Redis configuration:
+
+```text
+redis://week7-redis:6379
+```
+
+Successful startup logs included:
+
+```text
+Redis socket connected.
+Redis client ready.
+Redis connection ready.
+```
+
+### 6. GitHub Actions CI
+
+The CI workflow was created at:
+
+```text
+.github/workflows/ci.yml
+```
+
+The workflow performs:
+
+1. Checkout repository.
+2. Set up Node.js 24.
+3. Install dependencies with `npm ci`.
+4. Run Jest tests.
+5. Build the Docker image.
+
+Workflow configuration:
+
+```yaml
+name: Week 11 CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Docker image
+        run: docker build -t phase2-week11 .
+```
+
+### 7. Test Verification
+
+The local Jest test run completed successfully:
+
+```text
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+```
+
+Jest displayed a module naming collision warning involving `tests/package.json`, but the test suite itself passed successfully.
+
+### 8. Git Security
+
+The following local/runtime files are excluded from Git:
+
+```text
+node_modules/
+tests/node_modules/
+.env
+certs/
+logs/
+src/database/*.db
+```
+
+This prevents environment variables, private certificates, logs, dependencies, and the SQLite database from being committed.
+
+A staged-file security check was performed for names containing:
+
+```text
+env
+key
+cert
+db
+node_modules
+```
+
+No matching sensitive staged files were found.
+
+### 9. Git Commits
+
+Week 11 work was committed locally using:
+
+```text
+a3c0339 Complete Week 11 Docker CI/CD setup
+3e2347d Ignore local certificates and database
+```
+
+Final local Git status:
+
+```text
+nothing to commit, working tree clean
+```
+
+GitHub remote:
+
+```text
+https://github.com/Aksha4/Phase-2.git
+```
+
+The remote was configured locally. The commits had not yet been pushed to GitHub at the time of this assessment.
+
+## Week 11 Deliverables
+
+- [x] Multi-stage Dockerfile created
+- [x] Docker image built successfully
+- [x] Production container started
+- [x] Redis connected through Docker network
+- [x] HTTPS certificate mounted at runtime
+- [x] GitHub Actions CI workflow created
+- [x] Jest test verification completed
+- [x] Docker build included in CI
+- [x] Sensitive local files excluded from Git
+- [x] Week 11 commits created
+- [x] Working tree verified clean
+
+## Week 11 Conclusion
+
+Week 11 established a containerized and CI-ready foundation for the Phase-2 backend. The application was packaged with a multi-stage Docker build, deployed in a Docker container, connected to Redis through a dedicated network, and configured for HTTPS using runtime-mounted certificates.
+
+GitHub Actions was configured to automate dependency installation, testing, and Docker image building. Git ignore rules were also updated to keep local secrets, certificates, logs, dependencies, and the SQLite database outside source control.
+
+## Repository
+
+https://github.com/Aksha4/Phase-2
